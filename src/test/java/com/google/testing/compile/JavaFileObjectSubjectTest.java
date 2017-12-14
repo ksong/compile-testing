@@ -19,20 +19,20 @@ package com.google.testing.compile;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.testing.compile.JavaFileObjectSubject.assertThat;
 import static com.google.testing.compile.JavaFileObjectSubject.javaFileObjects;
+import static com.google.testing.compile.VerificationFailureStrategy.VERIFY;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.Assert.fail;
 
-import com.google.common.truth.ExpectFailure;
+import com.google.testing.compile.VerificationFailureStrategy.VerificationException;
 import java.io.IOException;
 import java.util.regex.Pattern;
 import javax.tools.JavaFileObject;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 @RunWith(JUnit4.class)
 public final class JavaFileObjectSubjectTest {
-  @Rule public final ExpectFailure expectFailure = new ExpectFailure();
 
   private static final JavaFileObject CLASS =
       JavaFileObjects.forSourceLines(
@@ -73,13 +73,12 @@ public final class JavaFileObjectSubjectTest {
 
   @Test
   public void hasContents_failure() {
-    expectFailure
-        .whenTesting()
-        .about(javaFileObjects())
-        .that(CLASS_WITH_FIELD)
-        .hasContents(JavaFileObjects.asByteSource(DIFFERENT_NAME));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getName());
+    try {
+      verifyThat(CLASS_WITH_FIELD).hasContents(JavaFileObjects.asByteSource(DIFFERENT_NAME));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getName());
+    }
   }
 
   @Test
@@ -89,16 +88,14 @@ public final class JavaFileObjectSubjectTest {
 
   @Test
   public void contentsAsString_fail() {
-    expectFailure
-        .whenTesting()
-        .about(javaFileObjects())
-        .that(CLASS)
-        .contentsAsString(UTF_8)
-        .containsMatch("bad+");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .containsMatch("the contents of .*" + Pattern.quote(CLASS.getName()));
-    assertThat(expected.getMessage()).contains("bad+");
+    try {
+      verifyThat(CLASS).contentsAsString(UTF_8).containsMatch("bad+");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .containsMatch("the contents of .*" + Pattern.quote(CLASS.getName()));
+      assertThat(expected.getMessage()).contains("bad+");
+    }
   }
 
   @Test
@@ -113,87 +110,43 @@ public final class JavaFileObjectSubjectTest {
 
   @Test
   public void hasSourceEquivalentTo_failOnDifferences() throws IOException {
-    expectFailure
-        .whenTesting()
-        .about(javaFileObjects())
-        .that(CLASS)
-        .hasSourceEquivalentTo(DIFFERENT_NAME);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("is equivalent to");
-    assertThat(expected.getMessage()).contains(CLASS.getName());
-    assertThat(expected.getMessage()).contains(CLASS.getCharContent(false));
+    try {
+      verifyThat(CLASS).hasSourceEquivalentTo(DIFFERENT_NAME);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("is equivalent to");
+      assertThat(expected.getMessage()).contains(CLASS.getName());
+      assertThat(expected.getMessage()).contains(CLASS.getCharContent(false));
+    }
   }
 
   @Test
   public void hasSourceEquivalentTo_failOnExtraInExpected() throws IOException {
-    expectFailure
-        .whenTesting()
-        .about(javaFileObjects())
-        .that(CLASS)
-        .hasSourceEquivalentTo(CLASS_WITH_FIELD);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("is equivalent to");
-    assertThat(expected.getMessage()).contains("unmatched nodes in the expected tree");
-    assertThat(expected.getMessage()).contains(CLASS.getName());
-    assertThat(expected.getMessage()).contains(CLASS.getCharContent(false));
+    try {
+      verifyThat(CLASS).hasSourceEquivalentTo(CLASS_WITH_FIELD);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("is equivalent to");
+      assertThat(expected.getMessage()).contains("unmatched nodes in the expected tree");
+      assertThat(expected.getMessage()).contains(CLASS.getName());
+      assertThat(expected.getMessage()).contains(CLASS.getCharContent(false));
+    }
   }
 
   @Test
   public void hasSourceEquivalentTo_failOnExtraInActual() throws IOException {
-    expectFailure
-        .whenTesting()
-        .about(javaFileObjects())
-        .that(CLASS_WITH_FIELD)
-        .hasSourceEquivalentTo(CLASS);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("is equivalent to");
-    assertThat(expected.getMessage()).contains("unmatched nodes in the actual tree");
-    assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getName());
-    assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getCharContent(false));
+    try {
+      verifyThat(CLASS_WITH_FIELD).hasSourceEquivalentTo(CLASS);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("is equivalent to");
+      assertThat(expected.getMessage()).contains("unmatched nodes in the actual tree");
+      assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getName());
+      assertThat(expected.getMessage()).contains(CLASS_WITH_FIELD.getCharContent(false));
+    }
   }
 
-  private static final JavaFileObject SAMPLE_ACTUAL_FILE_FOR_MATCHING =
-      JavaFileObjects.forSourceLines(
-          "test.SomeFile",
-          "package test;",
-          "",
-          "import pkg.AnAnnotation;",
-          "import static another.something.Special.CONSTANT;",
-          "",
-          "@AnAnnotation(with = @Some(values = {1,2,3}), and = \"a string\")",
-          "public class SomeFile {",
-          "  private static final int CONSTANT_TIMES_2 = CONSTANT * 2;",
-          "  private static final int CONSTANT_TIMES_3 = CONSTANT * 3;",
-          "  private static final int CONSTANT_TIMES_4 = CONSTANT * 4;",
-          "",
-          "  @Nullable private MaybeNull field;",
-          "",
-          "  @Inject SomeFile() {",
-          "    this.field = MaybeNull.constructorBody();",
-          "  }",
-          "",
-          "  protected int method(Parameter p, OtherParam o) {",
-          "    return CONSTANT_TIMES_4 / p.hashCode() + o.hashCode();",
-          "  }",
-          "",
-          "  public static class InnerClass {",
-          "    private static final int CONSTANT_TIMES_8 = CONSTANT_TIMES_4 * 2;",
-          "",
-          "    @Nullable private MaybeNull innerClassField;",
-          "",
-          "    @Inject",
-          "    InnerClass() {",
-          "      this.innerClassField = MaybeNull.constructorBody();",
-          "    }",
-          "",
-          "    protected int innerClassMethod(Parameter p, OtherParam o) {",
-          "      return CONSTANT_TIMES_8 / p.hashCode() + o.hashCode();",
-          "    }",
-          "  }",
-          "}");
-
-  @Test
-  public void containsElementsIn_completeMatch() {
-    assertThat(SAMPLE_ACTUAL_FILE_FOR_MATCHING).containsElementsIn(SAMPLE_ACTUAL_FILE_FOR_MATCHING);
+  private static JavaFileObjectSubject verifyThat(JavaFileObject file) {
+    return VERIFY.about(javaFileObjects()).that(file);
   }
 }

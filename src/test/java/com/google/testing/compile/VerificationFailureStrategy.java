@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Google, Inc.
+ * Copyright (C) 2013 Google, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,17 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.google.testing.compile;
 
 import com.google.common.truth.FailureStrategy;
-import com.google.common.truth.SubjectFactory;
-import com.google.common.truth.Truth;
+import com.google.common.truth.TestVerb;
 
-/** A {@link Truth} subject factory for a {@link Compilation}. */
-final class CompilationSubjectFactory extends SubjectFactory<CompilationSubject, Compilation> {
+final class VerificationFailureStrategy extends FailureStrategy {
+  static final class VerificationException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    VerificationException(String message) {
+      super(message);
+    }
+  }
+
+  /** A {@link TestVerb} that throws something other than {@link AssertionError}. */
+  static final TestVerb VERIFY = new TestVerb(new VerificationFailureStrategy());
 
   @Override
-  public CompilationSubject getSubject(FailureStrategy fs, Compilation that) {
-    return new CompilationSubject(fs, that);
+  public void fail(String message) {
+    throw new VerificationFailureStrategy.VerificationException(message);
   }
 }

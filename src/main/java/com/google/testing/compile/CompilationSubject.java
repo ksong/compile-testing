@@ -35,8 +35,9 @@ import static javax.tools.Diagnostic.Kind.WARNING;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.truth.FailureMetadata;
+import com.google.common.truth.FailureStrategy;
 import com.google.common.truth.Subject;
+import com.google.common.truth.SubjectFactory;
 import com.google.common.truth.Truth;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
@@ -56,11 +57,11 @@ import javax.tools.StandardLocation;
 /** A {@link Truth} subject for a {@link Compilation}. */
 public final class CompilationSubject extends Subject<CompilationSubject, Compilation> {
 
-  private static final Subject.Factory<CompilationSubject, Compilation> FACTORY =
+  private static final SubjectFactory<CompilationSubject, Compilation> FACTORY =
       new CompilationSubjectFactory();
 
-  /** Returns a {@link Subject.Factory} for a {@link Compilation}. */
-  public static Subject.Factory<CompilationSubject, Compilation> compilations() {
+  /** Returns a {@link SubjectFactory} for a {@link Compilation}. */
+  public static SubjectFactory<CompilationSubject, Compilation> compilations() {
     return FACTORY;
   }
 
@@ -69,14 +70,14 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
     return assertAbout(compilations()).that(actual);
   }
 
-  CompilationSubject(FailureMetadata failureMetadata, Compilation actual) {
-    super(failureMetadata, actual);
+  CompilationSubject(FailureStrategy failureStrategy, Compilation actual) {
+    super(failureStrategy, actual);
   }
 
   /** Asserts that the compilation succeeded. */
   public void succeeded() {
     if (actual().status().equals(FAILURE)) {
-      failWithRawMessage(
+      failureStrategy.fail(
           actual().describeFailureDiagnostics() + actual().describeGeneratedSourceFiles());
     }
   }
@@ -90,7 +91,7 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
   /** Asserts that the compilation failed. */
   public void failed() {
     if (actual().status().equals(SUCCESS)) {
-      failWithRawMessage(
+      failureStrategy.fail(
           "Compilation was expected to fail, but contained no errors.\n\n"
               + actual().describeGeneratedSourceFiles());
     }
@@ -171,7 +172,7 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
         actual().diagnosticsOfKind(kind, more);
     int actualCount = size(diagnostics);
     if (actualCount != expectedCount) {
-      failWithRawMessage(
+      failureStrategy.fail(
           messageListing(
               diagnostics,
               "Expected %d %s, but found the following %d %s:",
@@ -283,7 +284,7 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
             .filter(diagnostic -> expectedPattern.matcher(diagnostic.getMessage(null)).find())
             .collect(toImmutableList());
     if (diagnosticsWithMessage.isEmpty()) {
-      failWithRawMessage(
+      failureStrategy.fail(
           messageListing(diagnosticsOfKind, "Expected %s, but only found:", expectedDiagnostic));
     }
     return diagnosticsWithMessage;
@@ -319,10 +320,6 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
         StandardLocation.SOURCE_OUTPUT, qualifiedName.replaceAll("\\.", "/") + ".java");
   }
 
-  private static final JavaFileObject ALREADY_FAILED =
-      JavaFileObjects.forSourceLines(
-          "compile.Failure", "package compile;", "", "final class Failure {}");
-
   private JavaFileObjectSubject checkGeneratedFile(
       Optional<JavaFileObject> generatedFile, Location location, String format, Object... args) {
     if (!generatedFile.isPresent()) {
@@ -335,7 +332,6 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
         }
       }
       fail(builder.toString());
-      return ignoreCheck().about(javaFileObjects()).that(ALREADY_FAILED);
     }
     return check().about(javaFileObjects()).that(generatedFile.get());
   }
@@ -375,7 +371,7 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
     }
 
     protected void failExpectingMatchingDiagnostic(String format, Object... args) {
-      failWithRawMessage(
+      failureStrategy.fail(
           new StringBuilder("Expected ")
               .append(expectedDiagnostic)
               .append(String.format(format, args))
@@ -449,7 +445,7 @@ public final class CompilationSubject extends Subject<CompilationSubject, Compil
       }
       return lines;
     }
-
+    
     /**
      * Returns a {@link Collector} that lists the file lines numbered by the input stream (1-based).
      */
