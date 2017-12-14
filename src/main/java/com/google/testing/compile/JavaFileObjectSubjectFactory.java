@@ -15,16 +15,16 @@
  */
 package com.google.testing.compile;
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
+import com.google.common.truth.FailureStrategy;
+import com.google.common.truth.SubjectFactory;
 import javax.tools.JavaFileObject;
 
 /** A factory for {@link JavaFileObjectSubject}s. */
 final class JavaFileObjectSubjectFactory
-    implements Subject.Factory<JavaFileObjectSubject, JavaFileObject> {
+    extends SubjectFactory<JavaFileObjectSubject, JavaFileObject> {
 
   @Override
-  public JavaFileObjectSubject createSubject(FailureMetadata failureMetadata, JavaFileObject that) {
-    return new JavaFileObjectSubject(failureMetadata, that);
+  public JavaFileObjectSubject getSubject(FailureStrategy fs, JavaFileObject that) {
+    return new JavaFileObjectSubject(fs, that);
   }
 }

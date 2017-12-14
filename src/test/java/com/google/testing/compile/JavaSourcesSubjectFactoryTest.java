@@ -18,6 +18,7 @@ package com.google.testing.compile;
 import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
+import static com.google.testing.compile.VerificationFailureStrategy.VERIFY;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static javax.tools.StandardLocation.CLASS_OUTPUT;
 import static org.junit.Assert.fail;
@@ -25,12 +26,10 @@ import static org.junit.Assert.fail;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteSource;
 import com.google.common.io.Resources;
-import com.google.common.truth.ExpectFailure;
-import com.google.common.truth.Truth;
+import com.google.testing.compile.VerificationFailureStrategy.VerificationException;
 import java.util.Arrays;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -42,8 +41,6 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class JavaSourcesSubjectFactoryTest {
-  @Rule public final ExpectFailure expectFailure = new ExpectFailure();
-
   private static final JavaFileObject HELLO_WORLD =
       JavaFileObjects.forSourceLines(
           "test.HelloWorld",
@@ -75,16 +72,14 @@ public class JavaSourcesSubjectFactoryTest {
         .that(JavaFileObjects.forResource(Resources.getResource("HelloWorld.java")))
         .compilesWithoutError();
     assertAbout(javaSource())
-        .that(
-            JavaFileObjects.forSourceLines(
-                "test.HelloWorld",
-                "package test;",
-                "",
-                "public class HelloWorld {",
-                "  public static void main(String[] args) {",
-                "    System.out.println(\"Hello World!\");",
-                "  }",
-                "}"))
+        .that(JavaFileObjects.forSourceLines("test.HelloWorld",
+            "package test;",
+            "",
+            "public class HelloWorld {",
+            "  public static void main(String[] args) {",
+            "    System.out.println(\"Hello World!\");",
+            "  }",
+            "}"))
         .compilesWithoutError();
   }
 
@@ -112,108 +107,120 @@ public class JavaSourcesSubjectFactoryTest {
 
   @Test
   public void compilesWithoutWarnings_failsWithWarnings() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutWarnings();
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 0 warnings, but found the following 2 warnings:\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutWarnings();
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 0 warnings, but found the following 2 warnings:\n");
+    }
   }
 
   @Test
   public void compilesWithoutError_noWarning() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutError()
-        .withWarningContaining("what is it?");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Expected a warning containing \"what is it?\", but only found:\n");
-    // some versions of javac wedge the file and position in the middle
-    assertThat(expected.getMessage()).endsWith("this is a message\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutError()
+          .withWarningContaining("what is it?");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .startsWith("Expected a warning containing \"what is it?\", but only found:\n");
+      // some versions of javac wedge the file and position in the middle
+      assertThat(expected.getMessage()).endsWith("this is a message\n");
+    }
   }
 
   @Test
   public void compilesWithoutError_warningNotInFile() {
     JavaFileObject otherSource = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutError()
-        .withWarningContaining("this is a message")
-        .in(otherSource);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s",
-                otherSource.getName()));
-    assertThat(expected.getMessage()).contains(HELLO_WORLD.getName());
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutError()
+          .withWarningContaining("this is a message")
+          .in(otherSource);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s",
+                  otherSource.getName()));
+      assertThat(expected.getMessage()).contains(HELLO_WORLD.getName());
+    }
   }
 
   @Test
   public void compilesWithoutError_warningNotOnLine() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutError()
-        .withWarningContaining("this is a message")
-        .in(HELLO_WORLD)
-        .onLine(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorLine = 6;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s on line:\n   1: ",
-                HELLO_WORLD.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutError()
+          .withWarningContaining("this is a message")
+          .in(HELLO_WORLD)
+          .onLine(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorLine = 6;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s on line:\n   1: ",
+                  HELLO_WORLD.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    }
   }
 
   @Test
   public void compilesWithoutError_warningNotAtColumn() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutError()
-        .withWarningContaining("this is a message")
-        .in(HELLO_WORLD)
-        .onLine(6)
-        .atColumn(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorCol = 8;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s at column 1 of line 6",
-                HELLO_WORLD.getName()));
-    assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutError()
+          .withWarningContaining("this is a message")
+          .in(HELLO_WORLD)
+          .onLine(6)
+          .atColumn(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorCol = 8;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s at column 1 of line 6",
+                  HELLO_WORLD.getName()));
+      assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    }
   }
 
   @Test
   public void compilesWithoutError_wrongWarningCount() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .compilesWithoutError()
-        .withWarningCount(42);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 42 warnings, but found the following 2 warnings:\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .compilesWithoutError()
+          .withWarningCount(42);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 42 warnings, but found the following 2 warnings:\n");
+    }
   }
 
   @Test
@@ -237,128 +244,141 @@ public class JavaSourcesSubjectFactoryTest {
 
   @Test
   public void compilesWithoutError_noNote() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .compilesWithoutError()
-        .withNoteContaining("what is it?");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Expected a note containing \"what is it?\", but only found:\n");
-    // some versions of javac wedge the file and position in the middle
-    assertThat(expected.getMessage()).endsWith("this is a message\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .compilesWithoutError()
+          .withNoteContaining("what is it?");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .startsWith("Expected a note containing \"what is it?\", but only found:\n");
+      // some versions of javac wedge the file and position in the middle
+      assertThat(expected.getMessage()).endsWith("this is a message\n");
+    }
   }
 
   @Test
   public void compilesWithoutError_noteNotInFile() {
     JavaFileObject otherSource = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .compilesWithoutError()
-        .withNoteContaining("this is a message")
-        .in(otherSource);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s", otherSource.getName()));
-    assertThat(expected.getMessage()).contains(HELLO_WORLD.getName());
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .compilesWithoutError()
+          .withNoteContaining("this is a message")
+          .in(otherSource);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s", otherSource.getName()));
+      assertThat(expected.getMessage()).contains(HELLO_WORLD.getName());
+    }
   }
 
   @Test
   public void compilesWithoutError_noteNotOnLine() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .compilesWithoutError()
-        .withNoteContaining("this is a message")
-        .in(HELLO_WORLD)
-        .onLine(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorLine = 6;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s on line:\n   1: ",
-                HELLO_WORLD.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .compilesWithoutError()
+          .withNoteContaining("this is a message")
+          .in(HELLO_WORLD)
+          .onLine(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorLine = 6;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s on line:\n   1: ",
+                  HELLO_WORLD.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    }
   }
 
   @Test
   public void compilesWithoutError_noteNotAtColumn() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .compilesWithoutError()
-        .withNoteContaining("this is a message")
-        .in(HELLO_WORLD)
-        .onLine(6)
-        .atColumn(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorCol = 8;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s at column 1 of line 6",
-                HELLO_WORLD.getName()));
-    assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .compilesWithoutError()
+          .withNoteContaining("this is a message")
+          .in(HELLO_WORLD)
+          .onLine(6)
+          .atColumn(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorCol = 8;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s at column 1 of line 6",
+                  HELLO_WORLD.getName()));
+      assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    }
   }
 
   @Test
   public void compilesWithoutError_wrongNoteCount() {
     JavaFileObject fileObject = HELLO_WORLD;
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(fileObject)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .compilesWithoutError()
-        .withNoteCount(42);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 42 notes, but found the following 2 notes:\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(fileObject)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .compilesWithoutError()
+          .withNoteCount(42);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 42 notes, but found the following 2 notes:\n");
+    }
   }
 
   @Test
   public void compilesWithoutError_failureReportsFiles() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource(Resources.getResource("HelloWorld.java")))
-        .processedWith(new FailingGeneratingProcessor())
-        .compilesWithoutError();
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("Compilation produced the following errors:\n");
-    assertThat(expected.getMessage()).contains(FailingGeneratingProcessor.GENERATED_CLASS_NAME);
-    assertThat(expected.getMessage()).contains(FailingGeneratingProcessor.GENERATED_SOURCE);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource(Resources.getResource("HelloWorld.java")))
+          .processedWith(new FailingGeneratingProcessor())
+          .compilesWithoutError();
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("Compilation produced the following errors:\n");
+      assertThat(expected.getMessage()).contains(FailingGeneratingProcessor.GENERATED_CLASS_NAME);
+      assertThat(expected.getMessage()).contains(FailingGeneratingProcessor.GENERATED_SOURCE);
+    }
   }
 
   @Test
   public void compilesWithoutError_throws() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld-broken.java"))
-        .compilesWithoutError();
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).startsWith("Compilation produced the following errors:\n");
-    assertThat(expected.getMessage()).contains("No files were generated.");
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld-broken.java"))
+          .compilesWithoutError();
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).startsWith("Compilation produced the following errors:\n");
+      assertThat(expected.getMessage()).contains("No files were generated.");
+    }
   }
 
   @Test
   public void compilesWithoutError_exceptionCreatedOrPassedThrough() {
     RuntimeException e = new RuntimeException();
     try {
-      Truth.assertAbout(javaSource())
+      VERIFY
+          .about(javaSource())
           .that(JavaFileObjects.forResource("HelloWorld.java"))
           .processedWith(new ThrowingProcessor(e))
           .compilesWithoutError();
@@ -390,7 +410,8 @@ public class JavaSourcesSubjectFactoryTest {
   @Test
   public void parsesAs_expectedFileFailsToParse() {
     try {
-      Truth.assertAbout(javaSource())
+      VERIFY
+          .about(javaSource())
           .that(JavaFileObjects.forResource("HelloWorld.java"))
           .parsesAs(JavaFileObjects.forResource("HelloWorld-broken.java"));
       fail();
@@ -402,7 +423,8 @@ public class JavaSourcesSubjectFactoryTest {
   @Test
   public void parsesAs_actualFileFailsToParse() {
     try {
-      Truth.assertAbout(javaSource())
+      VERIFY
+          .about(javaSource())
           .that(JavaFileObjects.forResource("HelloWorld-broken.java"))
           .parsesAs(JavaFileObjects.forResource("HelloWorld.java"));
       fail();
@@ -413,298 +435,318 @@ public class JavaSourcesSubjectFactoryTest {
 
   @Test
   public void failsToCompile_throws() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .failsToCompile();
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Compilation was expected to fail, but contained no errors");
-    assertThat(expected.getMessage()).contains("No files were generated.");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .failsToCompile();
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).startsWith(
+          "Compilation was expected to fail, but contained no errors");
+      assertThat(expected.getMessage()).contains("No files were generated.");
+    }
   }
 
   @Test
   public void failsToCompile_throwsNoMessage() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new ErrorProcessor())
-        .failsToCompile()
-        .withErrorContaining("some error");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Expected an error containing \"some error\", but only found:\n");
-    // some versions of javac wedge the file and position in the middle
-    assertThat(expected.getMessage()).endsWith("expected error!\n");
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new ErrorProcessor())
+          .failsToCompile().withErrorContaining("some error");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).startsWith(
+          "Expected an error containing \"some error\", but only found:\n");
+      // some versions of javac wedge the file and position in the middle
+      assertThat(expected.getMessage()).endsWith("expected error!\n");
+    }
   }
 
   @Test
   public void failsToCompile_throwsNotInFile() {
     JavaFileObject fileObject = JavaFileObjects.forResource("HelloWorld.java");
     JavaFileObject otherFileObject = JavaFileObjects.forResource("HelloWorld-different.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(fileObject)
-        .processedWith(new ErrorProcessor())
-        .failsToCompile()
-        .withErrorContaining("expected error!")
-        .in(otherFileObject);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected an error containing \"expected error!\" in %s",
-                otherFileObject.getName()));
-    assertThat(expected.getMessage()).contains(fileObject.getName());
-    //                  "(no associated file)")));
+    try {
+      VERIFY.about(javaSource())
+          .that(fileObject)
+          .processedWith(new ErrorProcessor())
+          .failsToCompile().withErrorContaining("expected error!")
+              .in(otherFileObject);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected an error containing \"expected error!\" in %s",
+                  otherFileObject.getName()));
+      assertThat(expected.getMessage()).contains(fileObject.getName());
+      //                  "(no associated file)")));
+    }
   }
 
   @Test
   public void failsToCompile_throwsNotOnLine() {
     JavaFileObject fileObject = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(fileObject)
-        .processedWith(new ErrorProcessor())
-        .failsToCompile()
-        .withErrorContaining("expected error!")
-        .in(fileObject)
-        .onLine(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorLine = 18;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected an error containing \"expected error!\" in %s on line:\n   1: ",
-                fileObject.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    try {
+      VERIFY.about(javaSource())
+          .that(fileObject)
+          .processedWith(new ErrorProcessor())
+          .failsToCompile().withErrorContaining("expected error!")
+          .in(fileObject).onLine(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorLine = 18;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected an error containing \"expected error!\" in %s on line:\n   1: ",
+                  fileObject.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    }
   }
 
   @Test
   public void failsToCompile_throwsNotAtColumn() {
     JavaFileObject fileObject = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(fileObject)
-        .processedWith(new ErrorProcessor())
-        .failsToCompile()
-        .withErrorContaining("expected error!")
-        .in(fileObject)
-        .onLine(18)
-        .atColumn(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorCol = 8;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected an error containing \"expected error!\" in %s at column 1 of line 18",
-                fileObject.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorCol);
+    try {
+      VERIFY.about(javaSource())
+          .that(fileObject)
+          .processedWith(new ErrorProcessor())
+          .failsToCompile().withErrorContaining("expected error!")
+          .in(fileObject).onLine(18).atColumn(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorCol = 8;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected an error containing \"expected error!\" in %s at column 1 of line 18",
+                  fileObject.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorCol);
+    }
   }
 
   @Test
   public void failsToCompile_wrongErrorCount() {
     JavaFileObject fileObject = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(fileObject)
-        .processedWith(new ErrorProcessor())
-        .failsToCompile()
-        .withErrorCount(42);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 42 errors, but found the following 2 errors:\n");
+    try {
+      VERIFY.about(javaSource())
+          .that(fileObject)
+          .processedWith(new ErrorProcessor())
+          .failsToCompile()
+          .withErrorCount(42);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 42 errors, but found the following 2 errors:\n");
+    }
   }
 
   @Test
   public void failsToCompile_noWarning() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .failsToCompile()
-        .withWarningContaining("what is it?");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Expected a warning containing \"what is it?\", but only found:\n");
-    // some versions of javac wedge the file and position in the middle
-    assertThat(expected.getMessage()).endsWith("this is a message\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .failsToCompile()
+          .withWarningContaining("what is it?");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .startsWith("Expected a warning containing \"what is it?\", but only found:\n");
+      // some versions of javac wedge the file and position in the middle
+      assertThat(expected.getMessage()).endsWith("this is a message\n");
+    }
   }
 
   @Test
   public void failsToCompile_warningNotInFile() {
     JavaFileObject otherSource = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .failsToCompile()
-        .withWarningContaining("this is a message")
-        .in(otherSource);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s",
-                otherSource.getName()));
-    assertThat(expected.getMessage()).contains(HELLO_WORLD_BROKEN.getName());
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .failsToCompile()
+          .withWarningContaining("this is a message")
+          .in(otherSource);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s",
+                  otherSource.getName()));
+      assertThat(expected.getMessage()).contains(HELLO_WORLD_BROKEN.getName());
+    }
   }
 
   @Test
   public void failsToCompile_warningNotOnLine() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .failsToCompile()
-        .withWarningContaining("this is a message")
-        .in(HELLO_WORLD_BROKEN)
-        .onLine(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorLine = 6;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s on line:\n   1: ",
-                HELLO_WORLD_BROKEN.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .failsToCompile()
+          .withWarningContaining("this is a message")
+          .in(HELLO_WORLD_BROKEN)
+          .onLine(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorLine = 6;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s on line:\n   1: ",
+                  HELLO_WORLD_BROKEN.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    }
   }
 
   @Test
   public void failsToCompile_warningNotAtColumn() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .failsToCompile()
-        .withWarningContaining("this is a message")
-        .in(HELLO_WORLD_BROKEN)
-        .onLine(6)
-        .atColumn(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorCol = 8;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a warning containing \"this is a message\" in %s at column 1 of line 6",
-                HELLO_WORLD_BROKEN.getName()));
-    assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .failsToCompile()
+          .withWarningContaining("this is a message")
+          .in(HELLO_WORLD_BROKEN)
+          .onLine(6)
+          .atColumn(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorCol = 8;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a warning containing \"this is a message\" in %s at column 1 of line 6",
+                  HELLO_WORLD_BROKEN.getName()));
+      assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    }
   }
 
   @Test
   public void failsToCompile_wrongWarningCount() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
-        .failsToCompile()
-        .withWarningCount(42);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 42 warnings, but found the following 2 warnings:\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.WARNING))
+          .failsToCompile()
+          .withWarningCount(42);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 42 warnings, but found the following 2 warnings:\n");
+    }
   }
 
   @Test
   public void failsToCompile_noNote() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .failsToCompile()
-        .withNoteContaining("what is it?");
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .startsWith("Expected a note containing \"what is it?\", but only found:\n");
-    // some versions of javac wedge the file and position in the middle
-    assertThat(expected.getMessage()).endsWith("this is a message\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .failsToCompile()
+          .withNoteContaining("what is it?");
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .startsWith("Expected a note containing \"what is it?\", but only found:\n");
+      // some versions of javac wedge the file and position in the middle
+      assertThat(expected.getMessage()).endsWith("this is a message\n");
+    }
   }
 
   @Test
   public void failsToCompile_noteNotInFile() {
     JavaFileObject otherSource = JavaFileObjects.forResource("HelloWorld.java");
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .failsToCompile()
-        .withNoteContaining("this is a message")
-        .in(otherSource);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s", otherSource.getName()));
-    assertThat(expected.getMessage()).contains(HELLO_WORLD_BROKEN.getName());
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .failsToCompile()
+          .withNoteContaining("this is a message")
+          .in(otherSource);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s", otherSource.getName()));
+      assertThat(expected.getMessage()).contains(HELLO_WORLD_BROKEN.getName());
+    }
   }
 
   @Test
   public void failsToCompile_noteNotOnLine() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .failsToCompile()
-        .withNoteContaining("this is a message")
-        .in(HELLO_WORLD_BROKEN)
-        .onLine(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorLine = 6;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s on line:\n   1: ",
-                HELLO_WORLD_BROKEN.getName()));
-    assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .failsToCompile()
+          .withNoteContaining("this is a message")
+          .in(HELLO_WORLD_BROKEN)
+          .onLine(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorLine = 6;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s on line:\n   1: ",
+                  HELLO_WORLD_BROKEN.getName()));
+      assertThat(expected.getMessage()).contains("" + actualErrorLine);
+    }
   }
 
   @Test
   public void failsToCompile_noteNotAtColumn() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .failsToCompile()
-        .withNoteContaining("this is a message")
-        .in(HELLO_WORLD_BROKEN)
-        .onLine(6)
-        .atColumn(1);
-    AssertionError expected = expectFailure.getFailure();
-    int actualErrorCol = 8;
-    assertThat(expected.getMessage())
-        .contains(
-            String.format(
-                "Expected a note containing \"this is a message\" in %s at column 1 of line 6",
-                HELLO_WORLD_BROKEN.getName()));
-    assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .failsToCompile()
+          .withNoteContaining("this is a message")
+          .in(HELLO_WORLD_BROKEN)
+          .onLine(6)
+          .atColumn(1);
+      fail();
+    } catch (VerificationException expected) {
+      int actualErrorCol = 8;
+      assertThat(expected.getMessage())
+          .contains(
+              String.format(
+                  "Expected a note containing \"this is a message\" in %s at column 1 of line 6",
+                  HELLO_WORLD_BROKEN.getName()));
+      assertThat(expected.getMessage()).contains("[" + actualErrorCol + "]");
+    }
   }
 
   @Test
   public void failsToCompile_wrongNoteCount() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(HELLO_WORLD_BROKEN)
-        .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
-        .failsToCompile()
-        .withNoteCount(42);
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Expected 42 notes, but found the following 2 notes:\n");
+    try {
+      VERIFY
+          .about(javaSource())
+          .that(HELLO_WORLD_BROKEN)
+          .processedWith(new DiagnosticMessage.Processor(Diagnostic.Kind.NOTE))
+          .failsToCompile()
+          .withNoteCount(42);
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage())
+          .contains("Expected 42 notes, but found the following 2 notes:\n");
+    }
   }
 
   @Test
@@ -713,10 +755,7 @@ public class JavaSourcesSubjectFactoryTest {
     assertAbout(javaSource())
         .that(brokenFileObject)
         .failsToCompile()
-        .withErrorContaining("not a statement")
-        .in(brokenFileObject)
-        .onLine(23)
-        .atColumn(5)
+        .withErrorContaining("not a statement").in(brokenFileObject).onLine(23).atColumn(5)
         .and()
         .withErrorCount(4);
 
@@ -725,10 +764,7 @@ public class JavaSourcesSubjectFactoryTest {
         .that(happyFileObject)
         .processedWith(new ErrorProcessor())
         .failsToCompile()
-        .withErrorContaining("expected error!")
-        .in(happyFileObject)
-        .onLine(18)
-        .atColumn(8);
+        .withErrorContaining("expected error!").in(happyFileObject).onLine(18).atColumn(8);
   }
 
   @Test
@@ -737,110 +773,108 @@ public class JavaSourcesSubjectFactoryTest {
         .that(JavaFileObjects.forResource("HelloWorld.java"))
         .processedWith(new GeneratingProcessor())
         .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceString(
-                GeneratingProcessor.GENERATED_CLASS_NAME, GeneratingProcessor.GENERATED_SOURCE));
+        .and().generatesSources(JavaFileObjects.forSourceString(
+            GeneratingProcessor.GENERATED_CLASS_NAME,
+            GeneratingProcessor.GENERATED_SOURCE));
   }
 
   @Test
   public void generatesSources_failOnUnexpected() {
     String failingExpectationSource = "abstract class Blah {}";
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceString(
-                GeneratingProcessor.GENERATED_CLASS_NAME, failingExpectationSource));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("didn't match exactly");
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and().generatesSources(JavaFileObjects.forSourceString(
+              GeneratingProcessor.GENERATED_CLASS_NAME,
+              failingExpectationSource));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("didn't match exactly");
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    }
   }
 
   @Test
   public void generatesSources_failOnExtraExpected() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceLines(
-                GeneratingProcessor.GENERATED_CLASS_NAME,
-                "import java.util.List;  // Extra import",
-                "final class Blah {",
-                "   String blah = \"blah\";",
-                "}"));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("didn't match exactly");
-    assertThat(expected.getMessage()).contains("unmatched nodes in the expected tree");
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and().generatesSources(JavaFileObjects.forSourceLines(
+              GeneratingProcessor.GENERATED_CLASS_NAME,
+              "import java.util.List;  // Extra import",
+              "final class Blah {",
+              "   String blah = \"blah\";",
+              "}"));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("didn't match exactly");
+      assertThat(expected.getMessage()).contains("unmatched nodes in the expected tree");
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    }
   }
 
   @Test
   public void generatesSources_failOnExtraActual() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceLines(
-                GeneratingProcessor.GENERATED_CLASS_NAME,
-                "final class Blah {",
-                "  // missing field",
-                "}"));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("didn't match exactly");
-    assertThat(expected.getMessage()).contains("unmatched nodes in the actual tree");
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and().generatesSources(JavaFileObjects.forSourceLines(
+              GeneratingProcessor.GENERATED_CLASS_NAME,
+              "final class Blah {",
+              "  // missing field",
+              "}"));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("didn't match exactly");
+      assertThat(expected.getMessage()).contains("unmatched nodes in the actual tree");
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_SOURCE);
+    }
   }
 
   @Test
   public void generatesSources_failWithNoCandidates() {
     String failingExpectationName = "ThisIsNotTheRightFile";
     String failingExpectationSource = "abstract class ThisIsNotTheRightFile {}";
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceString(failingExpectationName, failingExpectationSource));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("top-level types that were not present");
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
-    assertThat(expected.getMessage()).contains(failingExpectationName);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and().generatesSources(JavaFileObjects.forSourceString(
+              failingExpectationName,
+              failingExpectationSource));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("top-level types that were not present");
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_CLASS_NAME);
+      assertThat(expected.getMessage()).contains(failingExpectationName);
+    }
   }
 
   @Test
   public void generatesSources_failWithNoGeneratedSources() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new NonGeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesSources(
-            JavaFileObjects.forSourceString(
-                GeneratingProcessor.GENERATED_CLASS_NAME, GeneratingProcessor.GENERATED_SOURCE));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage())
-        .contains("Compilation generated no additional source files, though some were expected.");
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new NonGeneratingProcessor())
+          .compilesWithoutError()
+          .and().generatesSources(JavaFileObjects.forSourceString(
+              GeneratingProcessor.GENERATED_CLASS_NAME,
+              GeneratingProcessor.GENERATED_SOURCE));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains(
+          "Compilation generated no additional source files, though some were expected.");
+    }
   }
 
   @Test
@@ -856,34 +890,36 @@ public class JavaSourcesSubjectFactoryTest {
 
   @Test
   public void generatesFileNamed_failOnFileExistence() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesFileNamed(CLASS_OUTPUT, "com.google.testing.compile", "Bogus")
-        .withContents(ByteSource.wrap("Bar".getBytes(UTF_8)));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("generated the file named \"Bogus\"");
-    assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_RESOURCE_NAME);
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and()
+          .generatesFileNamed(CLASS_OUTPUT, "com.google.testing.compile", "Bogus")
+          .withContents(ByteSource.wrap("Bar".getBytes(UTF_8)));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("generated the file named \"Bogus\"");
+      assertThat(expected.getMessage()).contains(GeneratingProcessor.GENERATED_RESOURCE_NAME);
+    }
   }
 
   @Test
   public void generatesFileNamed_failOnFileContents() {
-    expectFailure
-        .whenTesting()
-        .about(javaSource())
-        .that(JavaFileObjects.forResource("HelloWorld.java"))
-        .processedWith(new GeneratingProcessor())
-        .compilesWithoutError()
-        .and()
-        .generatesFileNamed(CLASS_OUTPUT, "com.google.testing.compile", "Foo")
-        .withContents(ByteSource.wrap("Bogus".getBytes(UTF_8)));
-    AssertionError expected = expectFailure.getFailure();
-    assertThat(expected.getMessage()).contains("Foo");
-    assertThat(expected.getMessage()).contains(" has contents ");
+    try {
+      VERIFY.about(javaSource())
+          .that(JavaFileObjects.forResource("HelloWorld.java"))
+          .processedWith(new GeneratingProcessor())
+          .compilesWithoutError()
+          .and()
+          .generatesFileNamed(CLASS_OUTPUT, "com.google.testing.compile", "Foo")
+          .withContents(ByteSource.wrap("Bogus".getBytes(UTF_8)));
+      fail();
+    } catch (VerificationException expected) {
+      assertThat(expected.getMessage()).contains("Foo");
+      assertThat(expected.getMessage()).contains(" has contents ");
+    }
   }
 
   @Test
